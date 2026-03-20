@@ -8,16 +8,16 @@ const repeatBtn = document.getElementById('repeatBtn');
 const progressEl = document.getElementById('progress');
 const currentTimeEl = document.getElementById('currentTime');
 const durationEl = document.getElementById('duration');
-const toggleViewBtn = document.getElementById('toggleView');
-const eqPanel = document.getElementById('eqPanel');
-const playlistBtn = document.getElementById('playlistBtn');
-const playlistDrawer = document.getElementById('playlistDrawer');
-const closePlaylist = document.getElementById('closePlaylist');
 const resetEqBtn = document.getElementById('resetEq');
 const eqCanvas = document.getElementById('eqCanvas');
 const eqCtx = eqCanvas.getContext('2d');
 const canvas = document.getElementById('visualizer');
 const ctx = canvas.getContext('2d');
+const shapeSelect = document.getElementById('shapeSelect');
+const shapeLabel = document.getElementById('shapeLabel');
+const playlistSearch = document.getElementById('playlistSearch');
+const tabButtons = document.querySelectorAll('.tab-btn');
+const tabPanels = document.querySelectorAll('.tab-panel');
 
 let audio = new Audio();
 let audioContext = null;
@@ -36,12 +36,14 @@ let shuffleQueue = [];
 let shufflePos = 0;
 
 let freqData = null;
-const ringPoints = 180;
+const ringPoints = 140;
 let bassThreshold = 140;
 let peakScale = 0;
 let targetPeakScale = 0;
 const shockwaves = [];
 const particles = [];
+let lastFrame = 0;
+let currentShape = 'circle';
 
 const eqPoints = [
   { freq: 60, gain: 0 },
@@ -63,7 +65,7 @@ function setIcon(btn, name, active = false) {
     repeat: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>'
   };
   btn.innerHTML = icons[name];
-  if (active) btn.classList.add('active'); else btn.classList.remove('active');
+  btn.classList.toggle('active', active);
 }
 
 function resizeCanvas() {
@@ -89,6 +91,17 @@ window.addEventListener('resize', () => {
 
 resizeCanvas();
 resizeEqCanvas();
+
+function setActiveTab(name) {
+  tabButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
+  tabPanels.forEach(panel => panel.classList.toggle('active', panel.dataset.name === name));
+  if (name === 'visualizer') resizeCanvas();
+  if (name === 'controls') resizeEqCanvas();
+}
+
+tabButtons.forEach(btn => {
+  btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
+});
 
 function formatTime(sec) {
   if (!sec || isNaN(sec)) return '0:00';
@@ -137,7 +150,6 @@ function renderPlaylist() {
       currentIndex = idx;
       if (isShuffle) rebuildShuffleQueue(currentIndex);
       playCurrent();
-      togglePlaylist(false);
     });
     playlistEl.appendChild(div);
   });
@@ -267,23 +279,24 @@ folderInput.addEventListener('change', e => loadPlaylist(e.target.files));
 audio.addEventListener('timeupdate', updateProgress);
 audio.addEventListener('ended', handleEnded);
 
-toggleViewBtn.addEventListener('click', () => {
-  eqPanel.classList.toggle('active');
-  toggleViewBtn.querySelector('span').textContent = eqPanel.classList.contains('active') ? 'Visualizer' : 'Audio Controls';
+playlistSearch.addEventListener('input', () => {
+  const term = playlistSearch.value.trim().toLowerCase();
+  [...playlistEl.children].forEach(item => {
+    const match = item.textContent.toLowerCase().includes(term);
+    item.style.display = match ? 'block' : 'none';
+  });
 });
 
-playlistBtn.addEventListener('click', () => togglePlaylist(true));
-closePlaylist.addEventListener('click', () => togglePlaylist(false));
-playlistDrawer.addEventListener('click', (e) => { if (e.target === playlistDrawer) togglePlaylist(false); });
-
-function togglePlaylist(open) {
-  playlistDrawer.classList.toggle('open', open);
-}
+shapeSelect.addEventListener('change', (e) => {
+  currentShape = e.target.value;
+  shapeLabel.textContent = shapeSelect.options[shapeSelect.selectedIndex].text;
+});
 
 // EQ canvas interaction
 function layoutEqPoints() {
   const w = eqCanvas.clientWidth;
   const h = eqCanvas.clientHeight;
+  if (!w || !h) return;
   const margin = 24;
   eqPoints.forEach((p, i) => {
     const x = margin + (i / (eqPoints.length - 1)) * (w - margin * 2);
@@ -298,21 +311,40 @@ function layoutEqPoints() {
 function drawEq() {
   const w = eqCanvas.clientWidth;
   const h = eqCanvas.clientHeight;
+  if (!w || !h) return;
   eqCtx.clearRect(0, 0, w, h);
-  eqCtx.lineWidth = 2;
-  eqCtx.strokeStyle = 'rgba(255,255,255,0.1)';
+  const gridGrad = eqCtx.createLinearGradient(0, 0, 0, h);
+  gridGrad.addColorStop(0, 'rgba(91,192,255,0.08)');
+  gridGrad.addColorStop(0.5, 'rgba(255,255,255,0.06)');
+  gridGrad.addColorStop(1, 'rgba(247,163,90,0.08)');
+  eqCtx.fillStyle = gridGrad;
+  eqCtx.fillRect(0, 0, w, h);
+
+  eqCtx.strokeStyle = 'rgba(255,255,255,0.08)';
+  eqCtx.lineWidth = 1;
+  const mid = h / 2;
+  for (let i = 0; i <= 4; i++) {
+    const y = (i / 4) * h;
+    eqCtx.beginPath();
+    eqCtx.moveTo(0, y);
+    eqCtx.lineTo(w, y);
+    eqCtx.stroke();
+  }
   eqCtx.beginPath();
-  eqCtx.moveTo(0, h / 2);
-  eqCtx.lineTo(w, h / 2);
+  eqCtx.moveTo(0, mid);
+  eqCtx.lineTo(w, mid);
+  eqCtx.strokeStyle = 'rgba(255,255,255,0.15)';
   eqCtx.stroke();
 
   // Curve
   eqCtx.lineWidth = 3;
   const gradient = eqCtx.createLinearGradient(0, 0, w, 0);
-  gradient.addColorStop(0, '#4da3ff');
-  gradient.addColorStop(0.5, '#9b7bff');
-  gradient.addColorStop(1, '#f1a25f');
+  gradient.addColorStop(0, '#5bc0ff');
+  gradient.addColorStop(0.5, '#9c7bff');
+  gradient.addColorStop(1, '#f7a35a');
   eqCtx.strokeStyle = gradient;
+  eqCtx.shadowBlur = 10;
+  eqCtx.shadowColor = 'rgba(91,192,255,0.35)';
 
   eqCtx.beginPath();
   eqPoints.forEach((p, i) => {
@@ -320,11 +352,12 @@ function drawEq() {
     else eqCtx.lineTo(p.x, p.y);
   });
   eqCtx.stroke();
+  eqCtx.shadowBlur = 0;
 
   // Points
   eqPoints.forEach(p => {
-    eqCtx.fillStyle = '#1f2432';
-    eqCtx.strokeStyle = '#4da3ff';
+    eqCtx.fillStyle = '#0f1320';
+    eqCtx.strokeStyle = '#5bc0ff';
     eqCtx.lineWidth = 2;
     eqCtx.beginPath();
     eqCtx.arc(p.x, p.y, 7, 0, Math.PI * 2);
@@ -393,10 +426,171 @@ resetEqBtn.addEventListener('click', () => {
   drawEq();
 });
 
-function drawVisualizer() {
+function mirroredData(samples = ringPoints) {
+  if (!freqData) return [];
+  const step = Math.max(1, Math.floor(freqData.length / samples));
+  const half = [];
+  for (let i = 0; i < samples; i++) {
+    const idx = Math.min(freqData.length - 1, i * step);
+    half.push(freqData[idx]);
+  }
+  const mirrored = half.concat([...half].reverse());
+  return mirrored;
+}
+
+function drawShockwaves(dt) {
+  for (let i = shockwaves.length - 1; i >= 0; i--) {
+    const s = shockwaves[i];
+    s.age += dt;
+    s.r += s.speed * dt;
+    const fade = Math.max(0, 1 - s.age / s.duration);
+    s.alpha = fade * 0.6;
+    ctx.beginPath();
+    ctx.arc(0, 0, s.r, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,255,255,${s.alpha})`;
+    ctx.lineWidth = s.width;
+    ctx.stroke();
+    if (s.age >= s.duration) shockwaves.splice(i, 1);
+  }
+}
+
+function drawStardust(dt, hueBase) {
+  particles.forEach(p => {
+    p.age += dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    const lifeRatio = Math.max(0, 1 - p.age / p.life);
+    ctx.fillStyle = `hsla(${(hueBase + p.hueShift) % 360}, 75%, 68%, ${lifeRatio * 0.9})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  for (let i = particles.length - 1; i >= 0; i--) if (particles[i].age >= particles[i].life) particles.splice(i, 1);
+}
+
+function spawnShockwave(baseRadius) {
+  shockwaves.push({
+    r: baseRadius,
+    width: 6,
+    speed: 260,
+    age: 0,
+    duration: 1.6,
+    alpha: 0.6
+  });
+}
+
+function spawnStardust(count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 120 + Math.random() * 140;
+    particles.push({
+      x: 0,
+      y: 0,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      size: 1 + Math.random() * 1.8,
+      hueShift: Math.random() * 180,
+      age: 0,
+      life: 2.4 + Math.random() * 1.1
+    });
+  }
+}
+
+function drawCircleShape(radiusBase, ampScale, hueBase, time) {
+  const data = mirroredData(ringPoints);
+  const totalPoints = data.length;
+  const angleStep = (Math.PI * 2) / totalPoints;
+  ctx.beginPath();
+  for (let i = 0; i < totalPoints; i++) {
+    const amp = data[i] / 255;
+    const radius = radiusBase + amp * ampScale + peakScale * 50;
+    const angle = i * angleStep + time * 0.0006;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  const grad = ctx.createRadialGradient(0, 0, radiusBase * 0.2, 0, 0, radiusBase + 180);
+  grad.addColorStop(0, `hsla(${(hueBase + 30) % 360}, 80%, 60%, 0.7)`);
+  grad.addColorStop(0.6, `hsla(${(hueBase + 170) % 360}, 70%, 58%, 0.4)`);
+  grad.addColorStop(1, 'rgba(14,16,24,0.35)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = `hsla(${(hueBase + 120) % 360}, 70%, 68%, 0.85)`;
+  ctx.stroke();
+}
+
+function drawWaveShape(w, h, hueBase) {
+  const samples = 120;
+  const data = mirroredData(samples);
+  const midY = 0;
+  const amplitude = Math.min(w, h) * 0.18;
+  ctx.beginPath();
+  for (let i = 0; i < data.length; i++) {
+    const t = i / (data.length - 1);
+    const x = (t - 0.5) * w;
+    const ease = Math.sin(Math.PI * t);
+    const y = midY - (data[i] / 255) * amplitude * ease - peakScale * 35 * ease;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  const grad = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+  grad.addColorStop(0, `hsla(${(hueBase + 40) % 360}, 75%, 64%, 0.45)`);
+  grad.addColorStop(1, `hsla(${(hueBase + 200) % 360}, 75%, 64%, 0.45)`);
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = 4;
+  ctx.stroke();
+
+  const fillGrad = ctx.createLinearGradient(0, -amplitude - 60, 0, amplitude + 80);
+  fillGrad.addColorStop(0, `hsla(${(hueBase + 10) % 360}, 85%, 65%, 0.25)`);
+  fillGrad.addColorStop(1, 'rgba(12,15,24,0.55)');
+  ctx.lineTo(w / 2, h / 2);
+  ctx.lineTo(-w / 2, h / 2);
+  ctx.closePath();
+  ctx.fillStyle = fillGrad;
+  ctx.fill();
+}
+
+function drawHexShape(radiusBase, ampScale, hueBase, time) {
+  const sides = 6;
+  const data = mirroredData(sides);
+  const angleStep = (Math.PI * 2) / sides;
+  ctx.beginPath();
+  for (let i = 0; i < sides; i++) {
+    const amp = data[i] / 255;
+    const radius = radiusBase + amp * ampScale + peakScale * 40;
+    const angle = i * angleStep + time * 0.0004;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  const grad = ctx.createRadialGradient(0, 0, radiusBase * 0.1, 0, 0, radiusBase + 140);
+  grad.addColorStop(0, `hsla(${(hueBase + 10) % 360}, 80%, 60%, 0.7)`);
+  grad.addColorStop(0.6, `hsla(${(hueBase + 150) % 360}, 70%, 60%, 0.5)`);
+  grad.addColorStop(1, 'rgba(14,16,24,0.35)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.lineWidth = 3.5;
+  ctx.strokeStyle = `hsla(${(hueBase + 110) % 360}, 70%, 70%, 0.9)`;
+  ctx.stroke();
+}
+
+function drawVisualizer(timestamp = 0) {
   requestAnimationFrame(drawVisualizer);
-  if (!analyser) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = 'rgba(91,192,255,0.55)';
+
+  const dt = lastFrame ? (timestamp - lastFrame) / 1000 : 0;
+  lastFrame = timestamp;
+
+  if (!analyser || !freqData) {
+    ctx.restore();
     return;
   }
 
@@ -407,96 +601,40 @@ function drawVisualizer() {
   const beatTriggered = bassEnergy > bassThreshold;
 
   if (beatTriggered) {
-    targetPeakScale = Math.min(1.8, targetPeakScale + (bassEnergy / 255) * 0.7);
+    targetPeakScale = Math.min(1.6, targetPeakScale + (bassEnergy / 255) * 0.6);
     bassThreshold = bassThreshold * 0.7 + bassEnergy * 0.3;
-    shockwaves.push({ r: 12, alpha: 0.45, width: 4 });
-    spawnParticles(12);
+    spawnShockwave(Math.min(w, h) * 0.1);
+    spawnStardust(16);
   } else {
     bassThreshold = bassThreshold * 0.995 + bassEnergy * 0.005;
   }
 
-  targetPeakScale *= 0.92;
-  peakScale = peakScale * 0.85 + targetPeakScale * 0.15;
+  targetPeakScale *= 0.9;
+  peakScale = peakScale * 0.86 + targetPeakScale * 0.14;
 
-  const w = canvas.clientWidth;
-  const h = canvas.clientHeight;
-  ctx.clearRect(0, 0, w, h);
-  ctx.save();
-  ctx.translate(w / 2, h / 2);
+  const radiusBase = Math.min(w, h) * 0.25;
+  const hueBase = (time * 0.03) % 360;
+  const ampScale = Math.min(w, h) * 0.16;
 
-  const radiusBase = Math.min(w, h) * 0.26;
-  const angleStep = (Math.PI * 2) / ringPoints;
-  const colorBase = (time * 0.03) % 360;
-
-  ctx.beginPath();
-  for (let i = 0; i <= ringPoints; i++) {
-    const idx = Math.floor((i / ringPoints) * freqData.length);
-    const amp = freqData[idx] / 255;
-    const radius = radiusBase + amp * 70 + peakScale * 45;
-    const angle = i * angleStep + time * 0.0005;
-    const x = Math.cos(angle) * radius;
-    const y = Math.sin(angle) * radius;
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  ctx.closePath();
-
-  const grad = ctx.createRadialGradient(0, 0, radiusBase * 0.25, 0, 0, radiusBase + 120);
-  grad.addColorStop(0, `hsla(${(colorBase + 40) % 360}, 80%, 60%, 0.75)`);
-  grad.addColorStop(0.6, `hsla(${(colorBase + 180) % 360}, 75%, 58%, 0.55)`);
-  grad.addColorStop(1, 'rgba(14,16,22,0.25)');
-  ctx.fillStyle = grad;
-  ctx.fill();
-
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = `hsl(${(colorBase + 140) % 360}, 70%, 65%)`;
-  ctx.stroke();
-
-  // Shockwaves
-  for (let i = shockwaves.length - 1; i >= 0; i--) {
-    const s = shockwaves[i];
-    ctx.beginPath();
-    ctx.arc(0, 0, s.r, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(255,255,255,${s.alpha})`;
-    ctx.lineWidth = s.width;
-    ctx.stroke();
-    s.r += 6;
-    s.alpha *= 0.94;
-    s.width *= 0.98;
-    if (s.alpha < 0.02) shockwaves.splice(i, 1);
+  switch (currentShape) {
+    case 'wave':
+      drawWaveShape(w, h, hueBase);
+      break;
+    case 'hex':
+      drawHexShape(radiusBase, ampScale * 0.6, hueBase, time);
+      break;
+    default:
+      drawCircleShape(radiusBase, ampScale, hueBase, time);
+      break;
   }
 
-  // Particles
-  particles.forEach(p => {
-    p.x += p.vx;
-    p.y += p.vy;
-    p.life -= 1;
-    ctx.fillStyle = `hsla(${(colorBase + p.hueShift) % 360}, 70%, 65%, ${Math.max(0, p.life / 60)})`;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
+  drawShockwaves(dt || 0.016);
+  drawStardust(dt || 0.016, hueBase);
 
   ctx.restore();
 }
 
 drawVisualizer();
-
-function spawnParticles(count) {
-  for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 2 + Math.random() * 3;
-    particles.push({
-      x: 0,
-      y: 0,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      life: 60 + Math.random() * 30,
-      size: 2 + Math.random() * 2,
-      hueShift: Math.random() * 180
-    });
-  }
-}
 
 function initIcons() {
   setIcon(prevBtn, 'prev');
@@ -507,6 +645,8 @@ function initIcons() {
 }
 
 initIcons();
+
+setActiveTab('visualizer');
 
 // Initial layout
 layoutEqPoints();

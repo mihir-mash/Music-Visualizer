@@ -11,75 +11,77 @@
     <header class="topbar">
       <div class="brand">Pulse MP3 Player</div>
       <div class="header-actions">
-        <button id="playlistBtn" class="pill-btn" aria-label="Toggle playlist">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="4" y1="5" x2="20" y2="5"/>
-            <line x1="4" y1="12" x2="14" y2="12"/>
-            <line x1="4" y1="19" x2="10" y2="19"/>
-            <polyline points="16 16 20 12 16 8"/>
-          </svg>
-          <span>Playlist</span>
-        </button>
         <label class="pill-btn" for="folderInput">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 4h5l2 3h9v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/>
           </svg>
           <span>Load Folder</span>
         </label>
-        <button id="toggleView" class="pill-btn" aria-label="Toggle audio controls">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/>
-            <path d="M8 12h8"/>
-            <path d="M12 8v8"/>
-          </svg>
-          <span>Audio Controls</span>
-        </button>
-        <input id="folderInput" type="file" webkitdirectory directory multiple accept="audio/mpeg">
+        <div class="select-wrap">
+          <span class="select-label">Shape</span>
+          <select id="shapeSelect">
+            <option value="circle">Smooth Circle</option>
+            <option value="wave">Linear Wave</option>
+            <option value="hex">Hexagon</option>
+          </select>
+        </div>
       </div>
+      <input id="folderInput" type="file" webkitdirectory directory multiple accept="audio/mpeg">
     </header>
 
-    <main class="main">
-      <canvas id="visualizer"></canvas>
-      <div id="eqPanel" class="panel-overlay">
-        <div class="eq-header">
-          <h2>Graphic EQ</h2>
-          <button id="resetEq" class="pill-btn">Reset EQ</button>
+    <nav class="tabbar" aria-label="Primary">
+      <button class="tab-btn active" data-tab="visualizer">Visualizer</button>
+      <button class="tab-btn" data-tab="controls">Audio Controls</button>
+      <button class="tab-btn" data-tab="playlist">Playlist</button>
+    </nav>
+
+    <main class="tab-panels">
+      <section id="visualizerTab" class="tab-panel active" data-name="visualizer">
+        <div class="canvas-wrap">
+          <canvas id="visualizer"></canvas>
+          <div class="shape-chip">Current shape: <span id="shapeLabel">Smooth Circle</span></div>
         </div>
-        <div class="eq-canvas-wrap">
-          <canvas id="eqCanvas"></canvas>
+      </section>
+
+      <section id="controlsTab" class="tab-panel" data-name="controls">
+        <div class="controls-grid">
+          <div class="control-row centered">
+            <button id="prevBtn" class="icon-btn" aria-label="Previous"></button>
+            <button id="playBtn" class="icon-btn" aria-label="Play/Pause"></button>
+            <button id="nextBtn" class="icon-btn" aria-label="Next"></button>
+            <button id="shuffleBtn" class="icon-btn toggle" aria-label="Shuffle"></button>
+            <button id="repeatBtn" class="icon-btn toggle" aria-label="Repeat"></button>
+          </div>
+          <div class="control-row">
+            <span id="currentTime" class="time-label">0:00</span>
+            <input id="progress" class="progress" type="range" min="0" max="100" value="0" step="0.1">
+            <span id="duration" class="time-label">0:00</span>
+          </div>
+
+          <div class="eq-card">
+            <div class="eq-header">
+              <div>
+                <p class="eyebrow">Interactive Parametric EQ</p>
+                <h2>Graphic EQ</h2>
+              </div>
+              <button id="resetEq" class="pill-btn pill-sm">Reset EQ</button>
+            </div>
+            <div class="eq-canvas-wrap">
+              <canvas id="eqCanvas"></canvas>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
+
+      <section id="playlistTab" class="tab-panel" data-name="playlist">
+        <div class="playlist-pane">
+          <div class="search-bar">
+            <input id="playlistSearch" type="text" placeholder="Search playlist..." aria-label="Search playlist">
+          </div>
+          <div id="playlist" class="playlist"></div>
+        </div>
+      </section>
     </main>
-
-    <section class="controls">
-      <div class="control-row centered">
-        <button id="prevBtn" class="icon-btn" aria-label="Previous"></button>
-        <button id="playBtn" class="icon-btn" aria-label="Play/Pause"></button>
-        <button id="nextBtn" class="icon-btn" aria-label="Next"></button>
-        <button id="shuffleBtn" class="icon-btn toggle" aria-label="Shuffle"></button>
-        <button id="repeatBtn" class="icon-btn toggle" aria-label="Repeat"></button>
-      </div>
-      <div class="control-row">
-        <span id="currentTime" class="time-label">0:00</span>
-        <input id="progress" class="progress" type="range" min="0" max="100" value="0" step="0.1">
-        <span id="duration" class="time-label">0:00</span>
-      </div>
-    </section>
-  </div>
-
-  <div id="playlistDrawer" class="drawer">
-    <div class="drawer-content">
-      <div class="drawer-header">
-        <h3>Playlist</h3>
-        <button id="closePlaylist" class="icon-btn" aria-label="Close playlist">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"/>
-            <line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-        </button>
-      </div>
-      <div id="playlist" class="playlist"></div>
-    </div>
   </div>
 
   <script src="script.js" defer></script>
