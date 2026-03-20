@@ -24,17 +24,17 @@
             <span class="caret">▾</span>
           </button>
           <div class="dropdown-menu" id="vizMenuList" role="listbox" aria-label="Visualizer mode">
-            <button class="dropdown-item" data-mode="central" role="option">
-              <span class="item-icon central"></span>
-              <span>Central Shape (Integrated)</span>
+            <button class="dropdown-item" data-mode="flow" role="option">
+              <span class="item-icon flow"></span>
+              <span>Generative Flowing Art</span>
             </button>
-            <button class="dropdown-item" data-mode="fluid" role="option">
-              <span class="item-icon fluid"></span>
-              <span>Full-Screen Fluid Swirl</span>
+            <button class="dropdown-item" data-mode="waveform" role="option">
+              <span class="item-icon waveform"></span>
+              <span>Beat-Synced Waveform</span>
             </button>
-            <button class="dropdown-item" data-mode="off" role="option">
-              <span class="item-icon off"></span>
-              <span>Shape Mode Off</span>
+            <button class="dropdown-item" data-mode="orb" role="option">
+              <span class="item-icon orb"></span>
+              <span>Drum-Reactive Orb</span>
             </button>
           </div>
         </div>
@@ -52,7 +52,7 @@
       <section id="visualizerTab" class="tab-panel active" data-name="visualizer">
         <div class="canvas-wrap">
           <canvas id="visualizer"></canvas>
-          <div class="shape-chip">Visualizer mode: <span id="shapeLabel">Central Shape (Integrated)</span></div>
+          <div class="shape-chip">Visualizer mode: <span id="shapeLabel">Generative Flowing Art</span></div>
         </div>
       </section>
 
@@ -60,10 +60,14 @@
         <div class="controls-grid">
           <div class="control-row centered">
             <button id="prevBtn" class="icon-btn" aria-label="Previous"></button>
-            <button id="playBtn" class="icon-btn" aria-label="Play/Pause"></button>
+            <button id="playBtn" class="icon-btn play-main" aria-label="Play/Pause"></button>
             <button id="nextBtn" class="icon-btn" aria-label="Next"></button>
             <button id="shuffleBtn" class="icon-btn toggle" aria-label="Shuffle"></button>
             <button id="repeatBtn" class="icon-btn toggle" aria-label="Repeat"></button>
+            <div class="speed-inline">
+              <input id="speedSlider" class="speed speed-compact" type="range" min="0.5" max="2.0" value="1.0" step="0.25">
+              <span id="speedValue" class="speed-value">1.00x</span>
+            </div>
           </div>
           <div class="control-row">
             <span id="currentTime" class="time-label">0:00</span>

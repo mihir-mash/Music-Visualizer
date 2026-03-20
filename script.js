@@ -20,6 +20,8 @@ const vizTrigger = document.getElementById('vizTrigger');
 const vizMenu = document.getElementById('vizMenu');
 const vizMenuList = document.getElementById('vizMenuList');
 const shapeLabel = document.getElementById('shapeLabel');
+const speedSlider = document.getElementById('speedSlider');
+const speedValue = document.getElementById('speedValue');
 
 let audio = new Audio();
 let audioContext = null;
@@ -38,13 +40,16 @@ let shuffleQueue = [];
 let shufflePos = 0;
 
 let freqData = null;
-let bassThreshold = 140;
-let peakScale = 0;
-let targetPeakScale = 0;
-const shockwaves = [];
-const flowNodes = [];
-let lastFrame = 0;
-let visualizerMode = 'central';
+let timeData = null;
+let visualizerMode = 'flow';
+let bassSmoothed = 0;
+let beatBoost = 0;
+
+const waveLayers = [
+  { hue: 205, offset: -26 },
+  { hue: 255, offset: 0 },
+  { hue: 290, offset: 26 }
+];
 
 const eqPoints = [31, 63, 125, 250, 500, 750, 1000, 1500, 2000, 3000, 4000, 6000, 8000, 10000, 12000, 16000]
   .map(freq => ({ freq, gain: 0, label: freq >= 1000 ? `${(freq / 1000).toFixed(freq >= 10000 ? 0 : 1)}k` : `${freq}` }));
@@ -69,7 +74,6 @@ function resizeCanvas() {
   canvas.width = canvas.clientWidth * dpr;
   canvas.height = canvas.clientHeight * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  initFlowField();
 }
 
 function resizeEqCanvas() {
@@ -113,7 +117,9 @@ function createAudioGraph() {
   sourceNode = audioContext.createMediaElementSource(audio);
   analyser = audioContext.createAnalyser();
   analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0.7;
   freqData = new Uint8Array(analyser.frequencyBinCount);
+  timeData = new Uint8Array(analyser.fftSize);
 
   eqFilters = eqPoints.map((band, i) => {
     const node = audioContext.createBiquadFilter();
@@ -252,6 +258,19 @@ progressEl.addEventListener('input', () => {
   if (audio.duration) audio.currentTime = progressEl.value;
 });
 
+function updatePlaybackSpeed(value) {
+  const rate = Math.max(0.5, Math.min(2, value));
+  audio.playbackRate = rate;
+  if (speedValue) speedValue.textContent = `${rate.toFixed(2)}x`;
+}
+
+if (speedSlider) {
+  speedSlider.addEventListener('input', () => {
+    updatePlaybackSpeed(parseFloat(speedSlider.value));
+  });
+  updatePlaybackSpeed(parseFloat(speedSlider.value) || 1);
+}
+
 playBtn.addEventListener('click', () => {
   if (!playlist.length) return;
   if (!isPlaying) playCurrent(); else pausePlayback();
@@ -284,9 +303,9 @@ playlistSearch.addEventListener('input', () => {
 });
 
 const vizLabels = {
-  central: 'Central Shape (Integrated)',
-  fluid: 'Full-Screen Fluid Swirl',
-  off: 'Shape Mode Off'
+  flow: 'Generative Flowing Art',
+  waveform: 'Beat-Synced Waveform',
+  orb: 'Drum-Reactive Orb'
 };
 
 function setVisualizerMode(mode) {
@@ -310,7 +329,7 @@ document.addEventListener('click', (e) => {
   if (!vizMenu.contains(e.target)) vizMenu.classList.remove('open');
 });
 
-setVisualizerMode('central');
+setVisualizerMode('flow');
 
 // EQ canvas interaction
 function layoutEqPoints() {
@@ -467,248 +486,205 @@ resetEqBtn.addEventListener('click', () => {
   drawEq();
 });
 
-function mirroredData(samples = 180) {
-  if (!freqData) return [];
-  const step = Math.max(1, Math.floor(freqData.length / samples));
-  const half = [];
-  for (let i = 0; i < samples; i++) {
-    const idx = Math.min(freqData.length - 1, i * step);
-    half.push(freqData[idx]);
-  }
-  return half.concat([...half].reverse());
+function lerp(a, b, t) {
+  return a + (b - a) * t;
 }
 
-function initFlowField(count = 420) {
-  flowNodes.length = 0;
+function drawBackgroundGrid() {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
-  for (let i = 0; i < count; i++) {
-    flowNodes.push({
-      x: (Math.random() - 0.5) * w,
-      y: (Math.random() - 0.5) * h,
-      angle: Math.random() * Math.PI * 2,
-      speed: 40 + Math.random() * 60,
-      hueShift: Math.random() * 180,
-      history: []
-    });
-  }
-}
-
-function drawShockwaves(dt) {
-  for (let i = shockwaves.length - 1; i >= 0; i--) {
-    const s = shockwaves[i];
-    s.age += dt;
-    s.r += s.speed * dt;
-    const fade = Math.max(0, 1 - s.age / s.duration);
-    s.alpha = fade * 0.45;
+  const spacing = Math.max(42, Math.min(w, h) / 18);
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= w; x += spacing) {
     ctx.beginPath();
-    ctx.arc(0, 0, s.r, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(${s.color.r},${s.color.g},${s.color.b},${s.alpha})`;
-    ctx.lineWidth = s.width;
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
     ctx.stroke();
-    if (s.age >= s.duration) shockwaves.splice(i, 1);
   }
-}
-
-function spawnShockwave(baseRadius, hueBase) {
-  const rgb = hsvToRgb((hueBase % 360) / 360, 0.7, 1);
-  shockwaves.push({
-    r: baseRadius,
-    width: 5,
-    speed: 280,
-    age: 0,
-    duration: 1.4,
-    alpha: 0.45,
-    color: rgb
-  });
-}
-
-function hsvToRgb(h, s, v) {
-  const i = Math.floor(h * 6);
-  const f = h * 6 - i;
-  const p = v * (1 - s);
-  const q = v * (1 - f * s);
-  const t = v * (1 - (1 - f) * s);
-  const mod = i % 6;
-  const r = [v, q, p, p, t, v][mod];
-  const g = [t, v, v, q, p, p][mod];
-  const b = [p, p, t, v, v, q][mod];
-  return { r: Math.floor(r * 255), g: Math.floor(g * 255), b: Math.floor(b * 255) };
-}
-
-function updateFlowField(dt, energy, hueBase) {
-  const w = canvas.clientWidth;
-  const h = canvas.clientHeight;
-  const amp = Math.max(0.3, energy);
-  const time = performance.now() * 0.0006;
-  flowNodes.forEach(node => {
-    const nx = (node.x / w) * 2;
-    const ny = (node.y / h) * 2;
-    const n1 = Math.sin(nx * 3 + time + node.hueShift * 0.02);
-    const n2 = Math.cos(ny * 2.5 - time * 1.2 + node.hueShift * 0.015);
-    const angle = n1 * 1.6 + n2 * 1.4 + amp * 2.5;
-    node.angle = angle;
-    const speed = node.speed * (0.6 + amp * 0.9);
-    node.x += Math.cos(angle) * speed * dt;
-    node.y += Math.sin(angle) * speed * dt;
-
-    if (node.x > w / 2) node.x -= w;
-    if (node.x < -w / 2) node.x += w;
-    if (node.y > h / 2) node.y -= h;
-    if (node.y < -h / 2) node.y += h;
-
-    node.history.push({ x: node.x, y: node.y });
-    if (node.history.length > 8) node.history.shift();
-  });
-}
-
-function drawFlowField(hueBase, intensity) {
-  const w = canvas.clientWidth;
-  const h = canvas.clientHeight;
-  const trailAlpha = Math.min(0.9, 0.35 + intensity * 0.5);
-  ctx.lineWidth = 1.4;
-  flowNodes.forEach((node, idx) => {
-    if (node.history.length < 2) return;
-    const grad = ctx.createLinearGradient(node.history[0].x, node.history[0].y, node.x, node.y);
-    const hue = (hueBase + node.hueShift) % 360;
-    grad.addColorStop(0, `hsla(${hue}, 80%, 65%, ${trailAlpha})`);
-    grad.addColorStop(1, `hsla(${(hue + 80) % 360}, 70%, 60%, ${trailAlpha})`);
-    ctx.strokeStyle = grad;
+  for (let y = 0; y <= h; y += spacing) {
     ctx.beginPath();
-    const hist = node.history;
-    ctx.moveTo(hist[0].x, hist[0].y);
-    for (let i = 1; i < hist.length; i++) ctx.lineTo(hist[i].x, hist[i].y);
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
     ctx.stroke();
-    if (idx % 8 === 0) {
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = `hsla(${(hue + 40) % 360}, 90%, 70%, 0.4)`;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
+  }
+  ctx.restore();
+}
+
+function drawGenerativeFlow(time) {
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  const cx = w / 2;
+  const cy = h / 2;
+  const t = time * 0.0012;
+  const layers = 4;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.globalCompositeOperation = 'lighter';
+
+  for (let l = 0; l < layers; l++) {
+    const phase = t * (0.4 + l * 0.08) + l * Math.PI * 0.5;
+    const amp = Math.min(w, h) * (0.18 + l * 0.03);
+    const points = [];
+    const steps = 80;
+    for (let i = 0; i <= steps; i++) {
+      const p = i / steps;
+      const angle = p * Math.PI * 2;
+      const r = amp * (0.7 + 0.25 * Math.sin(angle * 3 + phase) + 0.15 * Math.cos(angle * 2.2 - phase * 0.7));
+      const x = Math.cos(angle) * r * (1 + 0.05 * Math.sin(phase + p * 6.28));
+      const y = Math.sin(angle) * r * (1 + 0.05 * Math.cos(phase - p * 5.12));
+      points.push({ x, y });
     }
-  });
+    const hue = 190 + l * 32;
+    const grad = ctx.createLinearGradient(-amp, 0, amp, 0);
+    grad.addColorStop(0, `hsla(${hue}, 85%, 68%, 0.55)`);
+    grad.addColorStop(0.5, `hsla(${hue + 40}, 95%, 72%, 0.8)`);
+    grad.addColorStop(1, `hsla(${hue + 80}, 90%, 70%, 0.55)`);
+
+    ctx.lineWidth = 1.8 + l * 0.6;
+    ctx.strokeStyle = grad;
+    ctx.shadowBlur = 22 + l * 4;
+    ctx.shadowColor = `hsla(${hue + 30}, 100%, 72%, 0.65)`;
+
+    drawSmoothPath(points);
+    ctx.stroke();
+  }
+
+  ctx.restore();
 }
 
-function drawCentralCore(radiusBase, hueBase, data, energy) {
-  const totalPoints = data.length;
-  if (!totalPoints) return;
-  const angleStep = (Math.PI * 2) / totalPoints;
+function drawSmoothPath(points) {
+  if (!points.length) return;
   ctx.beginPath();
-  for (let i = 0; i < totalPoints; i++) {
-    const amp = data[i] / 255;
-    const radius = radiusBase + amp * radiusBase * 0.35 + peakScale * 40;
-    const angle = i * angleStep;
-    const x = Math.cos(angle) * radius;
-    const y = Math.sin(angle) * radius;
+  for (let i = 0; i < points.length; i++) {
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1] || p1;
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+    if (i === 0) ctx.moveTo(p1.x, p1.y);
+    else ctx.quadraticCurveTo(p1.x, p1.y, midX, midY);
+  }
+}
+
+function drawGlowingWaveform() {
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  const baseAmp = Math.min(h * 0.2, 120);
+  const amp = baseAmp * (0.5 + bassSmoothed * 0.6);
+  const boost = 1 + beatBoost * 1.8;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const segments = Math.min(160, timeData ? Math.floor(timeData.length / 4) : 120);
+
+  waveLayers.forEach((layer, idx) => {
+    const points = [];
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const x = t * w;
+      const sampleIdx = timeData ? Math.floor(t * (timeData.length - 1)) : 0;
+      const osc = timeData ? ((timeData[sampleIdx] - 128) / 128) : 0;
+      const localAmp = amp * (0.65 + idx * 0.04) * boost;
+      const y = osc * localAmp + layer.offset;
+      points.push({ x, y: h / 2 + y });
+    }
+
+    const grad = ctx.createLinearGradient(0, 0, w, 0);
+    grad.addColorStop(0, `hsla(${layer.hue}, 90%, 70%, 0.85)`);
+    grad.addColorStop(0.5, `hsla(${layer.hue + 40}, 90%, 66%, 0.95)`);
+    grad.addColorStop(1, `hsla(${layer.hue + 80}, 85%, 72%, 0.85)`);
+
+    ctx.lineWidth = 2.4 + idx * 0.6;
+    ctx.strokeStyle = grad;
+    ctx.shadowBlur = 24 + idx * 4;
+    ctx.shadowColor = `hsla(${layer.hue + 30}, 100%, 70%, 0.9)`;
+    drawSmoothPath(points);
+    ctx.stroke();
+  });
+
+  ctx.restore();
+}
+
+function drawBeatingOrb() {
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  const base = Math.min(w, h) * 0.12;
+  const rim = base * (0.9 + bassSmoothed * 1.5 + beatBoost * 1.2);
+  const detail = freqData ? freqData.length : 0;
+  const steps = 140;
+
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+
+  const grad = ctx.createRadialGradient(0, 0, rim * 0.25, 0, 0, rim + base * 0.25);
+  grad.addColorStop(0, 'rgba(140, 233, 255, 0.95)');
+  grad.addColorStop(0.55, 'rgba(115, 156, 255, 0.75)');
+  grad.addColorStop(1, 'rgba(6, 8, 14, 0.15)');
+
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const angle = t * Math.PI * 2;
+    const sample = detail ? freqData[Math.floor(t * (detail - 1))] / 255 : 0;
+    const push = sample * base * 0.18;
+    const r = rim + push;
+    const x = Math.cos(angle) * r;
+    const y = Math.sin(angle) * r;
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
   ctx.closePath();
-  const grad = ctx.createRadialGradient(0, 0, radiusBase * 0.25, 0, 0, radiusBase + 200);
-  grad.addColorStop(0, `hsla(${(hueBase + 30) % 360}, 85%, 68%, 0.85)`);
-  grad.addColorStop(0.55, `hsla(${(hueBase + 160) % 360}, 75%, 60%, 0.55)`);
-  grad.addColorStop(1, 'rgba(5,6,11,0.6)');
+
   ctx.fillStyle = grad;
-  ctx.shadowBlur = 18;
-  ctx.shadowColor = `hsla(${(hueBase + 40) % 360}, 85%, 65%, 0.5)`;
+  ctx.shadowBlur = 40;
+  ctx.shadowColor = 'rgba(103, 212, 255, 0.9)';
   ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.lineWidth = 3.5;
-  ctx.strokeStyle = `hsla(${(hueBase + 120) % 360}, 80%, 70%, 0.9)`;
+
+  ctx.shadowBlur = 24;
+  ctx.strokeStyle = 'rgba(103, 212, 255, 0.7)';
+  ctx.lineWidth = 2.4;
   ctx.stroke();
 
-  ctx.globalAlpha = 0.3 + energy * 0.4;
-  ctx.beginPath();
-  ctx.arc(0, 0, radiusBase * 0.6, 0, Math.PI * 2);
-  ctx.fillStyle = `hsla(${(hueBase + 80) % 360}, 90%, 60%, 0.4)`;
-  ctx.fill();
-  ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
-function drawFluidBackdrop(w, h, hueBase, energy) {
-  const grad = ctx.createRadialGradient(0, 0, Math.min(w, h) * 0.05, 0, 0, Math.min(w, h) * 0.8);
-  grad.addColorStop(0, `rgba(10, 12, 20, 0.4)`);
-  grad.addColorStop(0.4, `hsla(${(hueBase + 30) % 360}, 80%, 18%, 0.25)`);
-  grad.addColorStop(1, `rgba(5, 6, 11, 0.9)`);
-  ctx.fillStyle = grad;
-  ctx.fillRect(-w / 2, -h / 2, w, h);
-
-  const overlay = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, h / 2);
-  overlay.addColorStop(0, `hsla(${(hueBase + 200) % 360}, 70%, 30%, 0.12)`);
-  overlay.addColorStop(1, `hsla(${(hueBase + 320) % 360}, 70%, 30%, 0.12)`);
-  ctx.fillStyle = overlay;
-  ctx.globalAlpha = 0.9;
-  ctx.fillRect(-w / 2, -h / 2, w, h);
-  ctx.globalAlpha = 1;
-
-  ctx.globalAlpha = 0.12 + energy * 0.08;
-  ctx.fillStyle = `hsla(${(hueBase + 90) % 360}, 90%, 65%, 0.35)`;
-  ctx.fillRect(-w / 2, -h / 2, w, h);
-  ctx.globalAlpha = 1;
-}
-
-function drawVisualizer(timestamp = 0) {
+function drawVisualizer() {
   requestAnimationFrame(drawVisualizer);
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
   ctx.clearRect(0, 0, w, h);
-  ctx.save();
-  ctx.translate(w / 2, h / 2);
-
-  const dt = lastFrame ? (timestamp - lastFrame) / 1000 : 0;
-  lastFrame = timestamp;
 
   if (!analyser || !freqData) {
-    ctx.restore();
+    drawBackgroundGrid();
     return;
   }
 
   analyser.getByteFrequencyData(freqData);
+  if (timeData) analyser.getByteTimeDomainData(timeData);
   const time = performance.now();
-  const bassBins = freqData.slice(0, 22);
-  const midBins = freqData.slice(22, 90);
-  const trebleBins = freqData.slice(90, 180);
-  const bassEnergy = bassBins.reduce((a, b) => a + b, 0) / bassBins.length;
-  const midEnergy = midBins.reduce((a, b) => a + b, 0) / Math.max(1, midBins.length);
-  const trebleEnergy = trebleBins.reduce((a, b) => a + b, 0) / Math.max(1, trebleBins.length);
-  const overallEnergy = (bassEnergy + midEnergy + trebleEnergy) / 3 / 255;
-  const beatTriggered = bassEnergy > bassThreshold;
-
-  if (beatTriggered) {
-    targetPeakScale = Math.min(1.5, targetPeakScale + (bassEnergy / 255) * 0.5);
-    bassThreshold = bassThreshold * 0.7 + bassEnergy * 0.3;
-    spawnShockwave(Math.min(w, h) * 0.12, (time * 0.04) % 360);
+  const bassBins = freqData.slice(0, 24);
+  const bassEnergy = bassBins.reduce((a, b) => a + b, 0) / Math.max(1, bassBins.length);
+  const bassNorm = bassEnergy / 255;
+  bassSmoothed = lerp(bassSmoothed, bassNorm, 0.12);
+  const threshold = 0.38;
+  if (bassNorm > threshold) {
+    beatBoost = Math.min(1, beatBoost + (bassNorm - threshold) * 2.2);
   } else {
-    bassThreshold = bassThreshold * 0.995 + bassEnergy * 0.005;
+    beatBoost = lerp(beatBoost, 0, 0.12);
   }
 
-  targetPeakScale *= 0.9;
-  peakScale = peakScale * 0.86 + targetPeakScale * 0.14;
-
-  const hueBase = (time * 0.03) % 360;
-  drawFluidBackdrop(w, h, hueBase, overallEnergy);
-
-  updateFlowField(dt || 0.016, overallEnergy + peakScale * 0.4, hueBase);
-  drawFlowField(hueBase, overallEnergy + peakScale * 0.4);
-
-  const data = mirroredData(220);
-  const radiusBase = Math.min(w, h) * 0.22 + peakScale * 20;
-
-  if (visualizerMode === 'central') {
-    drawCentralCore(radiusBase, hueBase, data, overallEnergy);
-  } else if (visualizerMode === 'fluid') {
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.lineWidth = 1.2;
-    ctx.strokeStyle = `hsla(${(hueBase + 40) % 360}, 80%, 60%, 0.15)`;
-    for (let i = 0; i < 8; i++) {
-      ctx.beginPath();
-      const r = radiusBase * (0.6 + i * 0.12) + peakScale * 30;
-      ctx.arc(0, 0, r, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.globalCompositeOperation = 'source-over';
+  if (visualizerMode === 'flow') {
+    drawBackgroundGrid();
+    drawGenerativeFlow(time);
+  } else if (visualizerMode === 'waveform') {
+    drawBackgroundGrid();
+    drawGlowingWaveform();
+  } else if (visualizerMode === 'orb') {
+    drawBackgroundGrid();
+    drawBeatingOrb();
   }
-
-  drawShockwaves(dt || 0.016);
-  ctx.restore();
 }
 
 drawVisualizer();
