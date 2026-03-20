@@ -44,11 +44,15 @@ let timeData = null;
 let visualizerMode = 'flow';
 let bassSmoothed = 0;
 let beatBoost = 0;
+let smoothedWave = null;
+let orbPulse = 0;
 
 const waveLayers = [
-  { hue: 205, offset: -26 },
-  { hue: 255, offset: 0 },
-  { hue: 290, offset: 26 }
+  { hue: 200, offset: -36 },
+  { hue: 230, offset: -12 },
+  { hue: 255, offset: 12 },
+  { hue: 280, offset: 36 },
+  { hue: 310, offset: 58 }
 ];
 
 const eqPoints = [31, 63, 125, 250, 500, 750, 1000, 1500, 2000, 3000, 4000, 6000, 8000, 10000, 12000, 16000]
@@ -517,36 +521,40 @@ function drawGenerativeFlow(time) {
   const h = canvas.clientHeight;
   const cx = w / 2;
   const cy = h / 2;
-  const t = time * 0.0012;
-  const layers = 4;
+  const t = time * 0.0011;
+  const lineCount = 32;
+  const steps = 200;
 
   ctx.save();
   ctx.translate(cx, cy);
   ctx.globalCompositeOperation = 'lighter';
 
-  for (let l = 0; l < layers; l++) {
-    const phase = t * (0.4 + l * 0.08) + l * Math.PI * 0.5;
-    const amp = Math.min(w, h) * (0.18 + l * 0.03);
+  for (let l = 0; l < lineCount; l++) {
+    const n = l / lineCount;
+    const phase = t * (0.6 + n * 0.08) + n * Math.PI * 1.2;
+    const ampX = (w * 0.55) + (w * 0.28 * Math.sin(phase * 0.9 + n * 2.4));
+    const ampY = (h * 0.55) + (h * 0.28 * Math.cos(phase * 0.75 + n * 1.8));
+    const wobbleX = 0.18 + 0.08 * Math.sin(phase * 1.4);
+    const wobbleY = 0.18 + 0.08 * Math.cos(phase * 1.2);
     const points = [];
-    const steps = 80;
     for (let i = 0; i <= steps; i++) {
       const p = i / steps;
       const angle = p * Math.PI * 2;
-      const r = amp * (0.7 + 0.25 * Math.sin(angle * 3 + phase) + 0.15 * Math.cos(angle * 2.2 - phase * 0.7));
-      const x = Math.cos(angle) * r * (1 + 0.05 * Math.sin(phase + p * 6.28));
-      const y = Math.sin(angle) * r * (1 + 0.05 * Math.cos(phase - p * 5.12));
-      points.push({ x, y });
+      const rX = ampX * (0.82 + wobbleX * Math.sin(angle * 2.6 + phase) + 0.14 * Math.cos(angle * 1.7 - phase * 0.8));
+      const rY = ampY * (0.82 + wobbleY * Math.cos(angle * 2.1 - phase * 0.6) + 0.14 * Math.sin(angle * 1.9 + phase * 0.4));
+      points.push({ x: Math.cos(angle) * rX, y: Math.sin(angle) * rY });
     }
-    const hue = 190 + l * 32;
-    const grad = ctx.createLinearGradient(-amp, 0, amp, 0);
-    grad.addColorStop(0, `hsla(${hue}, 85%, 68%, 0.55)`);
-    grad.addColorStop(0.5, `hsla(${hue + 40}, 95%, 72%, 0.8)`);
-    grad.addColorStop(1, `hsla(${hue + 80}, 90%, 70%, 0.55)`);
 
-    ctx.lineWidth = 1.8 + l * 0.6;
+    const hue = 190 + n * 140;
+    const grad = ctx.createLinearGradient(-w, 0, w, 0);
+    grad.addColorStop(0, `hsla(${hue}, 88%, 70%, 0.28)`);
+    grad.addColorStop(0.5, `hsla(${hue + 36}, 96%, 76%, 0.55)`);
+    grad.addColorStop(1, `hsla(${hue + 72}, 90%, 70%, 0.28)`);
+
+    ctx.lineWidth = 0.45 + n * 0.18;
     ctx.strokeStyle = grad;
-    ctx.shadowBlur = 22 + l * 4;
-    ctx.shadowColor = `hsla(${hue + 30}, 100%, 72%, 0.65)`;
+    ctx.shadowBlur = 10 + n * 1.2;
+    ctx.shadowColor = `hsla(${hue + 30}, 100%, 74%, 0.5)`;
 
     drawSmoothPath(points);
     ctx.stroke();
@@ -572,9 +580,9 @@ function drawSmoothPath(points) {
 function drawGlowingWaveform() {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
-  const baseAmp = Math.min(h * 0.2, 120);
-  const amp = baseAmp * (0.5 + bassSmoothed * 0.6);
-  const boost = 1 + beatBoost * 1.8;
+  const baseAmp = Math.min(h * 0.16, 120);
+  const amp = baseAmp * (0.28 + bassSmoothed * 0.4);
+  const boost = 1 + beatBoost * 0.9;
 
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
@@ -586,21 +594,22 @@ function drawGlowingWaveform() {
       const t = i / segments;
       const x = t * w;
       const sampleIdx = timeData ? Math.floor(t * (timeData.length - 1)) : 0;
-      const osc = timeData ? ((timeData[sampleIdx] - 128) / 128) : 0;
-      const localAmp = amp * (0.65 + idx * 0.04) * boost;
-      const y = osc * localAmp + layer.offset;
+      const osc = smoothedWave ? smoothedWave[sampleIdx] : 0;
+      const localAmp = amp * (0.36 + idx * 0.06) * boost;
+      const phaseShift = idx * 0.35;
+      const y = (osc + 0.06 * Math.sin(t * Math.PI * 2 + phaseShift)) * localAmp + layer.offset;
       points.push({ x, y: h / 2 + y });
     }
 
     const grad = ctx.createLinearGradient(0, 0, w, 0);
-    grad.addColorStop(0, `hsla(${layer.hue}, 90%, 70%, 0.85)`);
-    grad.addColorStop(0.5, `hsla(${layer.hue + 40}, 90%, 66%, 0.95)`);
-    grad.addColorStop(1, `hsla(${layer.hue + 80}, 85%, 72%, 0.85)`);
+    grad.addColorStop(0, `hsla(${layer.hue}, 90%, 78%, 0.25)`);
+    grad.addColorStop(0.5, `hsla(${layer.hue + 40}, 95%, 82%, 0.32)`);
+    grad.addColorStop(1, `hsla(${layer.hue + 80}, 90%, 78%, 0.25)`);
 
-    ctx.lineWidth = 2.4 + idx * 0.6;
+    ctx.lineWidth = 1.4 + idx * 0.35;
     ctx.strokeStyle = grad;
-    ctx.shadowBlur = 24 + idx * 4;
-    ctx.shadowColor = `hsla(${layer.hue + 30}, 100%, 70%, 0.9)`;
+    ctx.shadowBlur = 14 + idx * 2;
+    ctx.shadowColor = `hsla(${layer.hue + 20}, 100%, 76%, 0.55)`;
     drawSmoothPath(points);
     ctx.stroke();
   });
@@ -611,8 +620,9 @@ function drawGlowingWaveform() {
 function drawBeatingOrb() {
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
-  const base = Math.min(w, h) * 0.12;
-  const rim = base * (0.9 + bassSmoothed * 1.5 + beatBoost * 1.2);
+  const base = Math.min(w, h) * 0.11;
+  const breath = bassSmoothed * base * 0.35;
+  const rim = base + breath + orbPulse;
   const detail = freqData ? freqData.length : 0;
   const steps = 140;
 
@@ -662,18 +672,33 @@ function drawVisualizer() {
   }
 
   analyser.getByteFrequencyData(freqData);
-  if (timeData) analyser.getByteTimeDomainData(timeData);
+  if (timeData) {
+    analyser.getByteTimeDomainData(timeData);
+    if (!smoothedWave || smoothedWave.length !== timeData.length) {
+      smoothedWave = new Float32Array(timeData.length);
+    }
+    for (let i = 0; i < timeData.length; i++) {
+      const sample = (timeData[i] - 128) / 128;
+      const prev = smoothedWave[i] || 0;
+      smoothedWave[i] = lerp(prev, sample, 0.06);
+    }
+  }
   const time = performance.now();
   const bassBins = freqData.slice(0, 24);
   const bassEnergy = bassBins.reduce((a, b) => a + b, 0) / Math.max(1, bassBins.length);
   const bassNorm = bassEnergy / 255;
   bassSmoothed = lerp(bassSmoothed, bassNorm, 0.12);
-  const threshold = 0.38;
+  const threshold = 0.36;
   if (bassNorm > threshold) {
-    beatBoost = Math.min(1, beatBoost + (bassNorm - threshold) * 2.2);
+    beatBoost = Math.min(1, beatBoost + (bassNorm - threshold) * 1.6);
   } else {
     beatBoost = lerp(beatBoost, 0, 0.12);
   }
+
+  const beatTrigger = Math.max(0, bassNorm - 0.32);
+  const pulseShot = beatTrigger * 60;
+  if (pulseShot > orbPulse) orbPulse = pulseShot;
+  else orbPulse = lerp(orbPulse, 0, 0.1);
 
   if (visualizerMode === 'flow') {
     drawBackgroundGrid();
