@@ -13,11 +13,13 @@ const eqCanvas = document.getElementById('eqCanvas');
 const eqCtx = eqCanvas.getContext('2d');
 const canvas = document.getElementById('visualizer');
 const ctx = canvas.getContext('2d');
-const shapeSelect = document.getElementById('shapeSelect');
-const shapeLabel = document.getElementById('shapeLabel');
 const playlistSearch = document.getElementById('playlistSearch');
 const tabButtons = document.querySelectorAll('.tab-btn');
 const tabPanels = document.querySelectorAll('.tab-panel');
+const vizTrigger = document.getElementById('vizTrigger');
+const vizMenu = document.getElementById('vizMenu');
+const vizMenuList = document.getElementById('vizMenuList');
+const shapeLabel = document.getElementById('shapeLabel');
 
 let audio = new Audio();
 let audioContext = null;
@@ -36,22 +38,16 @@ let shuffleQueue = [];
 let shufflePos = 0;
 
 let freqData = null;
-const ringPoints = 140;
 let bassThreshold = 140;
 let peakScale = 0;
 let targetPeakScale = 0;
 const shockwaves = [];
-const particles = [];
+const flowNodes = [];
 let lastFrame = 0;
-let currentShape = 'circle';
+let visualizerMode = 'central';
 
-const eqPoints = [
-  { freq: 60, gain: 0 },
-  { freq: 230, gain: 0 },
-  { freq: 910, gain: 0 },
-  { freq: 3600, gain: 0 },
-  { freq: 14000, gain: 0 }
-];
+const eqPoints = [31, 63, 125, 250, 500, 750, 1000, 1500, 2000, 3000, 4000, 6000, 8000, 10000, 12000, 16000]
+  .map(freq => ({ freq, gain: 0, label: freq >= 1000 ? `${(freq / 1000).toFixed(freq >= 10000 ? 0 : 1)}k` : `${freq}` }));
 let dragging = null;
 const maxGain = 15;
 
@@ -73,6 +69,7 @@ function resizeCanvas() {
   canvas.width = canvas.clientWidth * dpr;
   canvas.height = canvas.clientHeight * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  initFlowField();
 }
 
 function resizeEqCanvas() {
@@ -118,15 +115,14 @@ function createAudioGraph() {
   analyser.fftSize = 2048;
   freqData = new Uint8Array(analyser.frequencyBinCount);
 
-  const bands = eqPoints.map(p => ({ freq: p.freq }));
-  eqFilters = bands.map((band, i) => {
+  eqFilters = eqPoints.map((band, i) => {
     const node = audioContext.createBiquadFilter();
     if (i === 0) node.type = 'lowshelf';
-    else if (i === bands.length - 1) node.type = 'highshelf';
+    else if (i === eqPoints.length - 1) node.type = 'highshelf';
     else node.type = 'peaking';
     node.frequency.value = band.freq;
-    node.Q.value = 1;
-    node.gain.value = eqPoints[i].gain;
+    node.Q.value = 1.1;
+    node.gain.value = band.gain;
     return node;
   });
 
@@ -287,25 +283,69 @@ playlistSearch.addEventListener('input', () => {
   });
 });
 
-shapeSelect.addEventListener('change', (e) => {
-  currentShape = e.target.value;
-  shapeLabel.textContent = shapeSelect.options[shapeSelect.selectedIndex].text;
+const vizLabels = {
+  central: 'Central Shape (Integrated)',
+  fluid: 'Full-Screen Fluid Swirl',
+  off: 'Shape Mode Off'
+};
+
+function setVisualizerMode(mode) {
+  visualizerMode = mode;
+  shapeLabel.textContent = vizLabels[mode] || mode;
+  vizMenu.classList.remove('open');
+}
+
+vizTrigger.addEventListener('click', () => {
+  vizMenu.classList.toggle('open');
 });
+
+vizMenuList.addEventListener('click', (e) => {
+  const btn = e.target.closest('.dropdown-item');
+  if (!btn) return;
+  const mode = btn.dataset.mode;
+  setVisualizerMode(mode);
+});
+
+document.addEventListener('click', (e) => {
+  if (!vizMenu.contains(e.target)) vizMenu.classList.remove('open');
+});
+
+setVisualizerMode('central');
 
 // EQ canvas interaction
 function layoutEqPoints() {
   const w = eqCanvas.clientWidth;
   const h = eqCanvas.clientHeight;
   if (!w || !h) return;
-  const margin = 24;
+  const marginX = 28;
+  const marginTop = 18;
+  const marginBottom = 30;
   eqPoints.forEach((p, i) => {
-    const x = margin + (i / (eqPoints.length - 1)) * (w - margin * 2);
-    const centerY = h / 2;
-    const range = h * 0.35;
+    const x = marginX + (i / (eqPoints.length - 1)) * (w - marginX * 2);
+    const centerY = (h - marginBottom + marginTop) / 2;
+    const range = (h - marginTop - marginBottom) / 2;
     const y = centerY - (p.gain / maxGain) * range;
     p.x = x;
     p.y = y;
   });
+}
+
+function drawSmoothCurve(points) {
+  if (!points.length) return;
+  eqCtx.beginPath();
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1] || points[i];
+    const p3 = points[i + 2] || p2;
+    for (let t = 0; t <= 1; t += 0.08) {
+      const tt = t * t;
+      const ttt = tt * t;
+      const x = 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * tt + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * ttt);
+      const y = 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * tt + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * ttt);
+      if (i === 0 && t === 0) eqCtx.moveTo(x, y); else eqCtx.lineTo(x, y);
+    }
+  }
 }
 
 function drawEq() {
@@ -313,18 +353,19 @@ function drawEq() {
   const h = eqCanvas.clientHeight;
   if (!w || !h) return;
   eqCtx.clearRect(0, 0, w, h);
+
   const gridGrad = eqCtx.createLinearGradient(0, 0, 0, h);
-  gridGrad.addColorStop(0, 'rgba(91,192,255,0.08)');
-  gridGrad.addColorStop(0.5, 'rgba(255,255,255,0.06)');
-  gridGrad.addColorStop(1, 'rgba(247,163,90,0.08)');
+  gridGrad.addColorStop(0, 'rgba(103,212,255,0.08)');
+  gridGrad.addColorStop(0.5, 'rgba(255,255,255,0.05)');
+  gridGrad.addColorStop(1, 'rgba(216,115,255,0.08)');
   eqCtx.fillStyle = gridGrad;
   eqCtx.fillRect(0, 0, w, h);
 
   eqCtx.strokeStyle = 'rgba(255,255,255,0.08)';
   eqCtx.lineWidth = 1;
   const mid = h / 2;
-  for (let i = 0; i <= 4; i++) {
-    const y = (i / 4) * h;
+  for (let i = 0; i <= 5; i++) {
+    const y = (i / 5) * h;
     eqCtx.beginPath();
     eqCtx.moveTo(0, y);
     eqCtx.lineTo(w, y);
@@ -333,36 +374,36 @@ function drawEq() {
   eqCtx.beginPath();
   eqCtx.moveTo(0, mid);
   eqCtx.lineTo(w, mid);
-  eqCtx.strokeStyle = 'rgba(255,255,255,0.15)';
+  eqCtx.strokeStyle = 'rgba(255,255,255,0.16)';
   eqCtx.stroke();
 
-  // Curve
-  eqCtx.lineWidth = 3;
+  eqCtx.lineWidth = 3.5;
   const gradient = eqCtx.createLinearGradient(0, 0, w, 0);
-  gradient.addColorStop(0, '#5bc0ff');
-  gradient.addColorStop(0.5, '#9c7bff');
-  gradient.addColorStop(1, '#f7a35a');
+  gradient.addColorStop(0, '#67d4ff');
+  gradient.addColorStop(0.5, '#d873ff');
+  gradient.addColorStop(1, '#ffd166');
   eqCtx.strokeStyle = gradient;
-  eqCtx.shadowBlur = 10;
-  eqCtx.shadowColor = 'rgba(91,192,255,0.35)';
-
-  eqCtx.beginPath();
-  eqPoints.forEach((p, i) => {
-    if (i === 0) eqCtx.moveTo(p.x, p.y);
-    else eqCtx.lineTo(p.x, p.y);
-  });
+  eqCtx.shadowBlur = 14;
+  eqCtx.shadowColor = 'rgba(103,212,255,0.45)';
+  drawSmoothCurve(eqPoints);
   eqCtx.stroke();
   eqCtx.shadowBlur = 0;
 
-  // Points
   eqPoints.forEach(p => {
-    eqCtx.fillStyle = '#0f1320';
-    eqCtx.strokeStyle = '#5bc0ff';
+    eqCtx.fillStyle = '#0b0f1a';
+    eqCtx.strokeStyle = 'rgba(103,212,255,0.9)';
     eqCtx.lineWidth = 2;
     eqCtx.beginPath();
     eqCtx.arc(p.x, p.y, 7, 0, Math.PI * 2);
     eqCtx.fill();
     eqCtx.stroke();
+  });
+
+  eqCtx.fillStyle = 'rgba(255,255,255,0.65)';
+  eqCtx.font = '11px "Space Grotesk", "Inter", sans-serif';
+  eqCtx.textAlign = 'center';
+  eqPoints.forEach(p => {
+    eqCtx.fillText(p.label, p.x, h - 10);
   });
 }
 
@@ -426,7 +467,7 @@ resetEqBtn.addEventListener('click', () => {
   drawEq();
 });
 
-function mirroredData(samples = ringPoints) {
+function mirroredData(samples = 180) {
   if (!freqData) return [];
   const step = Math.max(1, Math.floor(freqData.length / samples));
   const half = [];
@@ -434,8 +475,23 @@ function mirroredData(samples = ringPoints) {
     const idx = Math.min(freqData.length - 1, i * step);
     half.push(freqData[idx]);
   }
-  const mirrored = half.concat([...half].reverse());
-  return mirrored;
+  return half.concat([...half].reverse());
+}
+
+function initFlowField(count = 420) {
+  flowNodes.length = 0;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  for (let i = 0; i < count; i++) {
+    flowNodes.push({
+      x: (Math.random() - 0.5) * w,
+      y: (Math.random() - 0.5) * h,
+      angle: Math.random() * Math.PI * 2,
+      speed: 40 + Math.random() * 60,
+      hueShift: Math.random() * 180,
+      history: []
+    });
+  }
 }
 
 function drawShockwaves(dt) {
@@ -444,136 +500,149 @@ function drawShockwaves(dt) {
     s.age += dt;
     s.r += s.speed * dt;
     const fade = Math.max(0, 1 - s.age / s.duration);
-    s.alpha = fade * 0.6;
+    s.alpha = fade * 0.45;
     ctx.beginPath();
     ctx.arc(0, 0, s.r, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(255,255,255,${s.alpha})`;
+    ctx.strokeStyle = `rgba(${s.color.r},${s.color.g},${s.color.b},${s.alpha})`;
     ctx.lineWidth = s.width;
     ctx.stroke();
     if (s.age >= s.duration) shockwaves.splice(i, 1);
   }
 }
 
-function drawStardust(dt, hueBase) {
-  particles.forEach(p => {
-    p.age += dt;
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    const lifeRatio = Math.max(0, 1 - p.age / p.life);
-    ctx.fillStyle = `hsla(${(hueBase + p.hueShift) % 360}, 75%, 68%, ${lifeRatio * 0.9})`;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  for (let i = particles.length - 1; i >= 0; i--) if (particles[i].age >= particles[i].life) particles.splice(i, 1);
-}
-
-function spawnShockwave(baseRadius) {
+function spawnShockwave(baseRadius, hueBase) {
+  const rgb = hsvToRgb((hueBase % 360) / 360, 0.7, 1);
   shockwaves.push({
     r: baseRadius,
-    width: 6,
-    speed: 260,
+    width: 5,
+    speed: 280,
     age: 0,
-    duration: 1.6,
-    alpha: 0.6
+    duration: 1.4,
+    alpha: 0.45,
+    color: rgb
   });
 }
 
-function spawnStardust(count) {
-  for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 120 + Math.random() * 140;
-    particles.push({
-      x: 0,
-      y: 0,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      size: 1 + Math.random() * 1.8,
-      hueShift: Math.random() * 180,
-      age: 0,
-      life: 2.4 + Math.random() * 1.1
-    });
-  }
+function hsvToRgb(h, s, v) {
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  const mod = i % 6;
+  const r = [v, q, p, p, t, v][mod];
+  const g = [t, v, v, q, p, p][mod];
+  const b = [p, p, t, v, v, q][mod];
+  return { r: Math.floor(r * 255), g: Math.floor(g * 255), b: Math.floor(b * 255) };
 }
 
-function drawCircleShape(radiusBase, ampScale, hueBase, time) {
-  const data = mirroredData(ringPoints);
+function updateFlowField(dt, energy, hueBase) {
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  const amp = Math.max(0.3, energy);
+  const time = performance.now() * 0.0006;
+  flowNodes.forEach(node => {
+    const nx = (node.x / w) * 2;
+    const ny = (node.y / h) * 2;
+    const n1 = Math.sin(nx * 3 + time + node.hueShift * 0.02);
+    const n2 = Math.cos(ny * 2.5 - time * 1.2 + node.hueShift * 0.015);
+    const angle = n1 * 1.6 + n2 * 1.4 + amp * 2.5;
+    node.angle = angle;
+    const speed = node.speed * (0.6 + amp * 0.9);
+    node.x += Math.cos(angle) * speed * dt;
+    node.y += Math.sin(angle) * speed * dt;
+
+    if (node.x > w / 2) node.x -= w;
+    if (node.x < -w / 2) node.x += w;
+    if (node.y > h / 2) node.y -= h;
+    if (node.y < -h / 2) node.y += h;
+
+    node.history.push({ x: node.x, y: node.y });
+    if (node.history.length > 8) node.history.shift();
+  });
+}
+
+function drawFlowField(hueBase, intensity) {
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  const trailAlpha = Math.min(0.9, 0.35 + intensity * 0.5);
+  ctx.lineWidth = 1.4;
+  flowNodes.forEach((node, idx) => {
+    if (node.history.length < 2) return;
+    const grad = ctx.createLinearGradient(node.history[0].x, node.history[0].y, node.x, node.y);
+    const hue = (hueBase + node.hueShift) % 360;
+    grad.addColorStop(0, `hsla(${hue}, 80%, 65%, ${trailAlpha})`);
+    grad.addColorStop(1, `hsla(${(hue + 80) % 360}, 70%, 60%, ${trailAlpha})`);
+    ctx.strokeStyle = grad;
+    ctx.beginPath();
+    const hist = node.history;
+    ctx.moveTo(hist[0].x, hist[0].y);
+    for (let i = 1; i < hist.length; i++) ctx.lineTo(hist[i].x, hist[i].y);
+    ctx.stroke();
+    if (idx % 8 === 0) {
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = `hsla(${(hue + 40) % 360}, 90%, 70%, 0.4)`;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+  });
+}
+
+function drawCentralCore(radiusBase, hueBase, data, energy) {
   const totalPoints = data.length;
+  if (!totalPoints) return;
   const angleStep = (Math.PI * 2) / totalPoints;
   ctx.beginPath();
   for (let i = 0; i < totalPoints; i++) {
     const amp = data[i] / 255;
-    const radius = radiusBase + amp * ampScale + peakScale * 50;
-    const angle = i * angleStep + time * 0.0006;
+    const radius = radiusBase + amp * radiusBase * 0.35 + peakScale * 40;
+    const angle = i * angleStep;
     const x = Math.cos(angle) * radius;
     const y = Math.sin(angle) * radius;
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   }
   ctx.closePath();
-  const grad = ctx.createRadialGradient(0, 0, radiusBase * 0.2, 0, 0, radiusBase + 180);
-  grad.addColorStop(0, `hsla(${(hueBase + 30) % 360}, 80%, 60%, 0.7)`);
-  grad.addColorStop(0.6, `hsla(${(hueBase + 170) % 360}, 70%, 58%, 0.4)`);
-  grad.addColorStop(1, 'rgba(14,16,24,0.35)');
+  const grad = ctx.createRadialGradient(0, 0, radiusBase * 0.25, 0, 0, radiusBase + 200);
+  grad.addColorStop(0, `hsla(${(hueBase + 30) % 360}, 85%, 68%, 0.85)`);
+  grad.addColorStop(0.55, `hsla(${(hueBase + 160) % 360}, 75%, 60%, 0.55)`);
+  grad.addColorStop(1, 'rgba(5,6,11,0.6)');
   ctx.fillStyle = grad;
+  ctx.shadowBlur = 18;
+  ctx.shadowColor = `hsla(${(hueBase + 40) % 360}, 85%, 65%, 0.5)`;
   ctx.fill();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = `hsla(${(hueBase + 120) % 360}, 70%, 68%, 0.85)`;
-  ctx.stroke();
-}
-
-function drawWaveShape(w, h, hueBase) {
-  const samples = 120;
-  const data = mirroredData(samples);
-  const midY = 0;
-  const amplitude = Math.min(w, h) * 0.18;
-  ctx.beginPath();
-  for (let i = 0; i < data.length; i++) {
-    const t = i / (data.length - 1);
-    const x = (t - 0.5) * w;
-    const ease = Math.sin(Math.PI * t);
-    const y = midY - (data[i] / 255) * amplitude * ease - peakScale * 35 * ease;
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  const grad = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
-  grad.addColorStop(0, `hsla(${(hueBase + 40) % 360}, 75%, 64%, 0.45)`);
-  grad.addColorStop(1, `hsla(${(hueBase + 200) % 360}, 75%, 64%, 0.45)`);
-  ctx.strokeStyle = grad;
-  ctx.lineWidth = 4;
-  ctx.stroke();
-
-  const fillGrad = ctx.createLinearGradient(0, -amplitude - 60, 0, amplitude + 80);
-  fillGrad.addColorStop(0, `hsla(${(hueBase + 10) % 360}, 85%, 65%, 0.25)`);
-  fillGrad.addColorStop(1, 'rgba(12,15,24,0.55)');
-  ctx.lineTo(w / 2, h / 2);
-  ctx.lineTo(-w / 2, h / 2);
-  ctx.closePath();
-  ctx.fillStyle = fillGrad;
-  ctx.fill();
-}
-
-function drawHexShape(radiusBase, ampScale, hueBase, time) {
-  const sides = 6;
-  const data = mirroredData(sides);
-  const angleStep = (Math.PI * 2) / sides;
-  ctx.beginPath();
-  for (let i = 0; i < sides; i++) {
-    const amp = data[i] / 255;
-    const radius = radiusBase + amp * ampScale + peakScale * 40;
-    const angle = i * angleStep + time * 0.0004;
-    const x = Math.cos(angle) * radius;
-    const y = Math.sin(angle) * radius;
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  ctx.closePath();
-  const grad = ctx.createRadialGradient(0, 0, radiusBase * 0.1, 0, 0, radiusBase + 140);
-  grad.addColorStop(0, `hsla(${(hueBase + 10) % 360}, 80%, 60%, 0.7)`);
-  grad.addColorStop(0.6, `hsla(${(hueBase + 150) % 360}, 70%, 60%, 0.5)`);
-  grad.addColorStop(1, 'rgba(14,16,24,0.35)');
-  ctx.fillStyle = grad;
-  ctx.fill();
+  ctx.shadowBlur = 0;
   ctx.lineWidth = 3.5;
-  ctx.strokeStyle = `hsla(${(hueBase + 110) % 360}, 70%, 70%, 0.9)`;
+  ctx.strokeStyle = `hsla(${(hueBase + 120) % 360}, 80%, 70%, 0.9)`;
   ctx.stroke();
+
+  ctx.globalAlpha = 0.3 + energy * 0.4;
+  ctx.beginPath();
+  ctx.arc(0, 0, radiusBase * 0.6, 0, Math.PI * 2);
+  ctx.fillStyle = `hsla(${(hueBase + 80) % 360}, 90%, 60%, 0.4)`;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function drawFluidBackdrop(w, h, hueBase, energy) {
+  const grad = ctx.createRadialGradient(0, 0, Math.min(w, h) * 0.05, 0, 0, Math.min(w, h) * 0.8);
+  grad.addColorStop(0, `rgba(10, 12, 20, 0.4)`);
+  grad.addColorStop(0.4, `hsla(${(hueBase + 30) % 360}, 80%, 18%, 0.25)`);
+  grad.addColorStop(1, `rgba(5, 6, 11, 0.9)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(-w / 2, -h / 2, w, h);
+
+  const overlay = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, h / 2);
+  overlay.addColorStop(0, `hsla(${(hueBase + 200) % 360}, 70%, 30%, 0.12)`);
+  overlay.addColorStop(1, `hsla(${(hueBase + 320) % 360}, 70%, 30%, 0.12)`);
+  ctx.fillStyle = overlay;
+  ctx.globalAlpha = 0.9;
+  ctx.fillRect(-w / 2, -h / 2, w, h);
+  ctx.globalAlpha = 1;
+
+  ctx.globalAlpha = 0.12 + energy * 0.08;
+  ctx.fillStyle = `hsla(${(hueBase + 90) % 360}, 90%, 65%, 0.35)`;
+  ctx.fillRect(-w / 2, -h / 2, w, h);
+  ctx.globalAlpha = 1;
 }
 
 function drawVisualizer(timestamp = 0) {
@@ -583,8 +652,6 @@ function drawVisualizer(timestamp = 0) {
   ctx.clearRect(0, 0, w, h);
   ctx.save();
   ctx.translate(w / 2, h / 2);
-  ctx.shadowBlur = 15;
-  ctx.shadowColor = 'rgba(91,192,255,0.55)';
 
   const dt = lastFrame ? (timestamp - lastFrame) / 1000 : 0;
   lastFrame = timestamp;
@@ -596,15 +663,19 @@ function drawVisualizer(timestamp = 0) {
 
   analyser.getByteFrequencyData(freqData);
   const time = performance.now();
-  const bassBins = freqData.slice(0, 18);
+  const bassBins = freqData.slice(0, 22);
+  const midBins = freqData.slice(22, 90);
+  const trebleBins = freqData.slice(90, 180);
   const bassEnergy = bassBins.reduce((a, b) => a + b, 0) / bassBins.length;
+  const midEnergy = midBins.reduce((a, b) => a + b, 0) / Math.max(1, midBins.length);
+  const trebleEnergy = trebleBins.reduce((a, b) => a + b, 0) / Math.max(1, trebleBins.length);
+  const overallEnergy = (bassEnergy + midEnergy + trebleEnergy) / 3 / 255;
   const beatTriggered = bassEnergy > bassThreshold;
 
   if (beatTriggered) {
-    targetPeakScale = Math.min(1.6, targetPeakScale + (bassEnergy / 255) * 0.6);
+    targetPeakScale = Math.min(1.5, targetPeakScale + (bassEnergy / 255) * 0.5);
     bassThreshold = bassThreshold * 0.7 + bassEnergy * 0.3;
-    spawnShockwave(Math.min(w, h) * 0.1);
-    spawnStardust(16);
+    spawnShockwave(Math.min(w, h) * 0.12, (time * 0.04) % 360);
   } else {
     bassThreshold = bassThreshold * 0.995 + bassEnergy * 0.005;
   }
@@ -612,25 +683,31 @@ function drawVisualizer(timestamp = 0) {
   targetPeakScale *= 0.9;
   peakScale = peakScale * 0.86 + targetPeakScale * 0.14;
 
-  const radiusBase = Math.min(w, h) * 0.25;
   const hueBase = (time * 0.03) % 360;
-  const ampScale = Math.min(w, h) * 0.16;
+  drawFluidBackdrop(w, h, hueBase, overallEnergy);
 
-  switch (currentShape) {
-    case 'wave':
-      drawWaveShape(w, h, hueBase);
-      break;
-    case 'hex':
-      drawHexShape(radiusBase, ampScale * 0.6, hueBase, time);
-      break;
-    default:
-      drawCircleShape(radiusBase, ampScale, hueBase, time);
-      break;
+  updateFlowField(dt || 0.016, overallEnergy + peakScale * 0.4, hueBase);
+  drawFlowField(hueBase, overallEnergy + peakScale * 0.4);
+
+  const data = mirroredData(220);
+  const radiusBase = Math.min(w, h) * 0.22 + peakScale * 20;
+
+  if (visualizerMode === 'central') {
+    drawCentralCore(radiusBase, hueBase, data, overallEnergy);
+  } else if (visualizerMode === 'fluid') {
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = `hsla(${(hueBase + 40) % 360}, 80%, 60%, 0.15)`;
+    for (let i = 0; i < 8; i++) {
+      ctx.beginPath();
+      const r = radiusBase * (0.6 + i * 0.12) + peakScale * 30;
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   drawShockwaves(dt || 0.016);
-  drawStardust(dt || 0.016, hueBase);
-
   ctx.restore();
 }
 

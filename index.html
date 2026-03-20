@@ -17,13 +17,26 @@
           </svg>
           <span>Load Folder</span>
         </label>
-        <div class="select-wrap">
-          <span class="select-label">Shape</span>
-          <select id="shapeSelect">
-            <option value="circle">Smooth Circle</option>
-            <option value="wave">Linear Wave</option>
-            <option value="hex">Hexagon</option>
-          </select>
+        <div class="dropdown" id="vizMenu">
+          <button class="dropdown-trigger" id="vizTrigger">
+            <span class="icon-dot"></span>
+            <span>Visualizer Settings</span>
+            <span class="caret">▾</span>
+          </button>
+          <div class="dropdown-menu" id="vizMenuList" role="listbox" aria-label="Visualizer mode">
+            <button class="dropdown-item" data-mode="central" role="option">
+              <span class="item-icon central"></span>
+              <span>Central Shape (Integrated)</span>
+            </button>
+            <button class="dropdown-item" data-mode="fluid" role="option">
+              <span class="item-icon fluid"></span>
+              <span>Full-Screen Fluid Swirl</span>
+            </button>
+            <button class="dropdown-item" data-mode="off" role="option">
+              <span class="item-icon off"></span>
+              <span>Shape Mode Off</span>
+            </button>
+          </div>
         </div>
       </div>
       <input id="folderInput" type="file" webkitdirectory directory multiple accept="audio/mpeg">
@@ -39,7 +52,7 @@
       <section id="visualizerTab" class="tab-panel active" data-name="visualizer">
         <div class="canvas-wrap">
           <canvas id="visualizer"></canvas>
-          <div class="shape-chip">Current shape: <span id="shapeLabel">Smooth Circle</span></div>
+          <div class="shape-chip">Visualizer mode: <span id="shapeLabel">Central Shape (Integrated)</span></div>
         </div>
       </section>
 
@@ -62,7 +75,7 @@
             <div class="eq-header">
               <div>
                 <p class="eyebrow">Interactive Parametric EQ</p>
-                <h2>Graphic EQ</h2>
+                <h2>16-Band Graphic EQ</h2>
               </div>
               <button id="resetEq" class="pill-btn pill-sm">Reset EQ</button>
             </div>
