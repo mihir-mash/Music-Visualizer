@@ -565,8 +565,8 @@ export default function App() {
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 bg-[#0b0e17]/80 backdrop-blur-xl border-b border-white/5 z-50">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#67d4ff] to-[#d873ff] flex items-center justify-center shadow-lg shadow-cyan-500/20">
-            <Music className="text-white w-6 h-6" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#67d4ff] to-[#d873ff] flex items-center justify-center shadow-lg shadow-cyan-500/20 overflow-hidden">
+            <img src="/logo.svg" alt="Pulse Player logo" className="w-10 h-10 object-cover" />
           </div>
           <div>
             <h1 className="font-display font-bold text-lg tracking-tight text-white">Pulse Player</h1>
