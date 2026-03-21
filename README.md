@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>PulsE Player</h1>
+  <h1>Pulse Player</h1>
   <p>High-fidelity local audio player with reactive visuals and a built-in parametric EQ.</p>
 </div>
 
