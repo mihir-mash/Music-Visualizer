@@ -1,20 +1,48 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+  <h1>PulsE Player</h1>
+  <p>High-fidelity local audio player with reactive visuals and a built-in parametric EQ.</p>
 </div>
 
-# Run and deploy your AI Studio app
+## What This App Does
 
-This contains everything you need to run your app locally.
+- Load a folder of local audio files (mp3 or any `audio/*`) and build a playlist on the fly—no uploads or accounts.
+- Switch between three live visualizers powered by the Web Audio API: Generative Silk, Ribbon Waveform, and Pulse Core.
+- Control playback with play/pause, previous/next, shuffle, repeat, seek bar, and volume slider.
+- Tweak a 16-band graphic EQ, reset to flat with one click, and adjust playback speed from 0.5x–2x.
+- Filter your library with instant search and see animated now-playing states.
+- Responsive layout designed for both desktop and touch interactions.
 
-View your app in AI Studio: https://ai.studio/apps/42de0464-4e0b-4f57-b4ee-bd0832900782
+## Getting Started
 
-## Run Locally
+**Prerequisites**
+- Node.js 18+ and npm
 
-**Prerequisites:**  Node.js
+**Install and Run**
+1) Install dependencies: `npm install`
+2) Start the dev server: `npm run dev`
+3) Open the printed localhost URL, click **Load Folder**, and pick a directory containing audio files.
 
+## Usage Notes
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- Visualizers live in the **Visualizer** tab; audio/EQ tools live in **Audio Engine**; playlist management lives in **Playlist**.
+- EQ supports ±15 dB per band; drag points directly on the curve to adjust.
+- Playback speed changes apply immediately to the active track.
+- Nothing is uploaded—audio stays on your machine and streams from `blob:` URLs.
+
+## Scripts
+
+- `npm run dev` — start Vite dev server on port 3000
+- `npm run build` — production build
+- `npm run preview` — preview built assets
+- `npm run lint` — typecheck via `tsc --noEmit`
+
+## Tech Stack
+
+- React 19 + Vite
+- Tailwind CSS v4 for styling
+- motion for animations, lucide-react for icons
+- Web Audio API + Canvas for visualization
+
+## Deployment
+
+Build with `npm run build` and deploy the `dist` output to any static host (e.g., Vercel, Netlify, S3/CloudFront).
